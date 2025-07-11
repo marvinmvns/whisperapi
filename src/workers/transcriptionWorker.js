@@ -155,7 +155,7 @@ class TranscriptionWorker {
     try {
       // Call nodewhisper with the audio file and model path correctly
       const result = await this.whisper(filePath, {
-        modelName: this.modelPath,
+        modelPath: this.modelPath,
         language: options.language || 'auto',
         translate: options.translate || false,
         word_timestamps: options.wordTimestamps !== false,
