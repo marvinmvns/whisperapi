@@ -1,0 +1,8 @@
+node_modules/
+uploads/
+temp/
+models/
+.env
+*.log
+coverage/
+.nyc_output/
