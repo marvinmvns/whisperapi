@@ -6,7 +6,7 @@ const FormData = require('form-data');
 const axios = require('axios');
 
 class AudioTranscriptionTester {
-  constructor(serverURL = 'http://localhost:3000') {
+  constructor(serverURL = 'http://localhost:3001') {
     this.serverURL = serverURL;
     this.axios = axios.create({ 
       baseURL: serverURL,
@@ -232,12 +232,12 @@ async function runTests() {
   console.log('');
   
   // Test audio file path (user can modify this)
-  const audioPath = process.argv[2] || './examples/sample-audio.wav';
+  const audioPath = process.argv[2] || 'demo.mp3';
   
   if (!fs.existsSync(audioPath)) {
     console.log('📁 Arquivo de áudio não fornecido ou não encontrado.');
     console.log('💡 Uso: node test-audio-transcription.js [caminho-do-audio]');
-    console.log('💡 Exemplo: node test-audio-transcription.js ./meu-audio.wav');
+    console.log('💡 Exemplo: node test-audio-transcription.js ./demo.mp3');
     console.log('\n🔍 Procurando por arquivos de áudio no diretório atual...');
     
     // Look for audio files in current directory
@@ -263,7 +263,7 @@ async function runTests() {
     // Run complete transcription test
     await tester.transcribeAudio(audioPath, {
       language: 'auto',
-      wordTimestamps: true,
+      wordTimestamps: false,
       cleanup: true
     });
     

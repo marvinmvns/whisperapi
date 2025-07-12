@@ -1,31 +1,37 @@
 const { parentPort } = require('worker_threads');
-const { nodewhisper } = require('nodejs-whisper');
+const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
 class TranscriptionWorker {
   constructor() {
-    this.whisper = null;
     this.init();
   }
 
   async init() {
     try {
-      const modelPath = process.env.WHISPER_MODEL_PATH || './models/ggml-large-v3-turbo.bin';
+      const modelPath = process.env.WHISPER_MODEL_PATH || './node_modules/nodejs-whisper/cpp/whisper.cpp/models/ggml-large-v3-turbo.bin';
+      const whisperBinary = process.env.WHISPER_BINARY || './node_modules/nodejs-whisper/cpp/whisper.cpp/build/bin/whisper-cli';
       
-      // Validate that the model file exists and is a valid model file
+      // Validate that the model file exists, auto-download if needed
       if (!fs.existsSync(modelPath)) {
-        console.log(`Model not found at ${modelPath}, attempting auto-download...`);
-        
-        // Extract model name from path (e.g., ggml-base.bin -> base)
-        const modelFileName = path.basename(modelPath);
-        const modelName = this.extractModelName(modelFileName);
-        
-        if (modelName) {
-          await this.autoDownloadModel(modelName, modelPath);
+        const autoDownloadModel = process.env.AUTO_DOWNLOAD_MODEL;
+        if (autoDownloadModel) {
+          console.log(`Model not found at ${modelPath}, attempting auto-download of ${autoDownloadModel}...`);
+          try {
+            await this.autoDownloadModel(autoDownloadModel, modelPath);
+            console.log(`Auto-download successful, model available at ${modelPath}`);
+          } catch (downloadError) {
+            throw new Error(`Model not found at ${modelPath} and auto-download failed: ${downloadError.message}`);
+          }
         } else {
-          throw new Error(`Unable to determine model name from path: ${modelPath}`);
+          throw new Error(`Model not found at ${modelPath}`);
         }
+      }
+
+      // Validate whisper binary exists
+      if (!fs.existsSync(whisperBinary)) {
+        throw new Error(`Whisper binary not found at ${whisperBinary}. Please compile whisper.cpp first.`);
       }
 
       // Validate model file integrity
@@ -33,9 +39,8 @@ class TranscriptionWorker {
         throw new Error(`Invalid or corrupted model file: ${modelPath}`);
       }
 
-      // Initialize whisper with the model path, not calling it as a function yet
-      this.whisper = nodewhisper;
       this.modelPath = modelPath;
+      this.whisperBinary = whisperBinary;
       
       console.log(`Whisper worker initialized successfully with model: ${modelPath}`);
     } catch (error) {
@@ -114,8 +119,11 @@ class TranscriptionWorker {
         console.log(`Created directory: ${targetDir}`);
       }
 
+      // Import nodejs-whisper for auto-download
+      const { nodewhisper } = require('nodejs-whisper');
+
       // Use nodejs-whisper's auto-download with the model name
-      const result = await nodewhisper('dummy.wav', {
+      await nodewhisper('dummy.wav', {
         autoDownloadModelName: modelName,
         withCuda: false
       }).catch(() => {
@@ -128,13 +136,9 @@ class TranscriptionWorker {
       const downloadedModelPath = path.join(nodejsWhisperModelsDir, `ggml-${modelName}.bin`);
       
       if (fs.existsSync(downloadedModelPath)) {
-        // Copy the model to our target location
-        fs.copyFileSync(downloadedModelPath, targetPath);
-        console.log(`Model copied to: ${targetPath}`);
-        
-        // Update environment variable for future use
-        process.env.WHISPER_MODEL_PATH = targetPath;
-        console.log(`Updated WHISPER_MODEL_PATH to: ${targetPath}`);
+        console.log(`Model successfully downloaded to: ${downloadedModelPath}`);
+        // Update the model path for this worker instance
+        this.modelPath = downloadedModelPath;
       } else {
         throw new Error(`Model download failed: ${downloadedModelPath} not found`);
       }
@@ -146,45 +150,146 @@ class TranscriptionWorker {
   }
 
   async transcribeAudio(filePath, options = {}) {
-    if (!this.whisper || !this.modelPath) {
+    if (!this.modelPath || !this.whisperBinary) {
       throw new Error('Whisper not initialized');
     }
 
     const startTime = Date.now();
+    let convertedFilePath = filePath;
     
     try {
-      // Call nodewhisper with the audio file and model path correctly
-      const result = await this.whisper(filePath, {
-        modelPath: this.modelPath,
-        language: options.language || 'auto',
-        translate: options.translate || false,
-        word_timestamps: options.wordTimestamps !== false,
-        verbose: false,
-        removeWavFileAfterTranscription: false,
-        withCuda: false,
-        whisperOptions: {
-          gen_file_txt: false,
-          gen_file_subtitle: false,
-          gen_file_vtt: false,
-          word_timestamps: true
-        },
-        ...options.whisperOptions
-      });
+      // Convert to WAV if not already WAV
+      if (!filePath.toLowerCase().endsWith('.wav')) {
+        convertedFilePath = await this.convertToWav(filePath);
+      }
 
+      const args = [
+        '-m', this.modelPath,
+        '-f', convertedFilePath
+      ];
+
+      // Add language if specified
+      if (options.language && options.language !== 'auto') {
+        args.push('-l', options.language);
+      }
+
+      // Add translate option
+      if (options.translate) {
+        args.push('--translate');
+      }
+
+      // Add word timestamps
+      if (options.wordTimestamps !== false) {
+        args.push('--max-len', '1');
+      }
+
+      const result = await this.runWhisperCommand(args);
       const processingTime = Math.ceil((Date.now() - startTime) / 1000);
       
       return {
-        text: result,
-        processingTime,
-        metadata: {
-          language: options.language || 'auto',
-          duration: processingTime,
-          filePath
-        }
+        text: result.text.trim(),
+        processingTime
       };
     } catch (error) {
       throw new Error(`Transcription failed: ${error.message}`);
+    } finally {
+      // Clean up converted file if it was created
+      if (convertedFilePath !== filePath && fs.existsSync(convertedFilePath)) {
+        try {
+          fs.unlinkSync(convertedFilePath);
+        } catch (cleanupError) {
+          console.warn(`Failed to cleanup converted file: ${cleanupError.message}`);
+        }
+      }
     }
+  }
+
+  async convertToWav(inputPath) {
+    const outputPath = inputPath.replace(/\.[^.]+$/, '.wav');
+    
+    return new Promise((resolve, reject) => {
+      const ffmpeg = spawn('ffmpeg', [
+        '-i', inputPath,
+        '-acodec', 'pcm_s16le',
+        '-ac', '1',
+        '-ar', '16000',
+        '-y',
+        outputPath
+      ]);
+
+      let stderr = '';
+
+      ffmpeg.stderr.on('data', (data) => {
+        stderr += data.toString();
+      });
+
+      ffmpeg.on('close', (code) => {
+        if (code !== 0) {
+          reject(new Error(`FFmpeg conversion failed with code ${code}: ${stderr}`));
+          return;
+        }
+        resolve(outputPath);
+      });
+
+      ffmpeg.on('error', (error) => {
+        reject(new Error(`Failed to start FFmpeg: ${error.message}`));
+      });
+    });
+  }
+
+  runWhisperCommand(args) {
+    return new Promise((resolve, reject) => {
+      const process = spawn(this.whisperBinary, args);
+      let stdout = '';
+      let stderr = '';
+
+      process.stdout.on('data', (data) => {
+        stdout += data.toString();
+      });
+
+      process.stderr.on('data', (data) => {
+        stderr += data.toString();
+      });
+
+      process.on('close', (code) => {
+        if (code !== 0) {
+          reject(new Error(`Whisper process failed with code ${code}: ${stderr}`));
+          return;
+        }
+
+        try {
+          // Parse whisper output - extract just the transcribed text
+          let text = stdout.trim();
+          
+          // Remove whisper timing/debug info, keep only the transcription
+          const lines = text.split('\n');
+          const transcriptionLines = lines.filter(line => {
+            // Filter out debug lines that contain timing info, model loading, etc.
+            return !line.includes('whisper_') && 
+                   !line.includes('load time') &&
+                   !line.includes('mel time') &&
+                   !line.includes('encode time') &&
+                   !line.includes('decode time') &&
+                   !line.includes('total time') &&
+                   !line.includes('fallbacks') &&
+                   line.trim().length > 0;
+          });
+          
+          text = transcriptionLines.join(' ').trim();
+          
+          resolve({
+            text,
+            language: 'detected'
+          });
+        } catch (parseError) {
+          reject(new Error(`Failed to parse whisper output: ${parseError.message}`));
+        }
+      });
+
+      process.on('error', (error) => {
+        reject(new Error(`Failed to start whisper process: ${error.message}`));
+      });
+    });
   }
 
   async cleanup(filePath) {

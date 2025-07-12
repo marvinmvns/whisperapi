@@ -3,8 +3,8 @@
 # WhisperAPI - Exemplos de uso com cURL
 # Execute este script para testar todos os endpoints da API
 
-API_URL="http://localhost:3000"
-AUDIO_FILE="./sample-audio.wav"
+API_URL="http://localhost:3001"
+AUDIO_FILE="./demo.mp3"
 
 echo "=== WhisperAPI - Exemplos cURL ==="
 echo
@@ -34,9 +34,9 @@ if [ -f "$AUDIO_FILE" ]; then
     echo "5. Enviando arquivo de áudio para transcrição..."
     UPLOAD_RESPONSE=$(curl -s -X POST "$API_URL/transcribe" \
         -F "audio=@$AUDIO_FILE" \
-        -F "language=auto" \
+        -F "language=pt" \
         -F "translate=false" \
-        -F "wordTimestamps=true")
+        -F "wordTimestamps=false")
     
     echo "$UPLOAD_RESPONSE" | jq '.'
     

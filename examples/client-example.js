@@ -3,7 +3,7 @@ const FormData = require('form-data');
 const axios = require('axios');
 
 class WhisperAPIClient {
-  constructor(baseURL = 'http://localhost:3000') {
+  constructor(baseURL = 'http://localhost:3001') {
     this.baseURL = baseURL;
     this.axios = axios.create({ baseURL });
   }
@@ -14,9 +14,9 @@ class WhisperAPIClient {
       formData.append('audio', fs.createReadStream(filePath));
       
       if (options.language) formData.append('language', options.language);
-      if (options.translate !== undefined) formData.append('translate', options.translate);
-      if (options.wordTimestamps !== undefined) formData.append('wordTimestamps', options.wordTimestamps);
-      if (options.cleanup !== undefined) formData.append('cleanup', options.cleanup);
+      if (options.translate !== undefined) formData.append('translate', String(options.translate));
+      if (options.wordTimestamps !== undefined) formData.append('wordTimestamps', String(options.wordTimestamps));
+      if (options.cleanup !== undefined) formData.append('cleanup', String(options.cleanup));
 
       const response = await this.axios.post('/transcribe', formData, {
         headers: formData.getHeaders(),
@@ -136,7 +136,7 @@ async function example() {
     const estimate = await client.getEstimate(60, '.wav');
     console.log(`✅ Estimated time: ${estimate.totalEstimatedTime}s total\n`);
     
-    const audioFile = './examples/sample-audio.wav';
+    const audioFile = './examples/demo.mp3';
     
     if (fs.existsSync(audioFile)) {
       console.log('5. Transcribing audio file...');
