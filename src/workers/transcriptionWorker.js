@@ -236,55 +236,89 @@ class TranscriptionWorker {
         }
 
         try {
-          // Parse whisper output - extract just the transcribed text
-          let text = stdout.trim();
+          // Parse whisper output - extract different versions of transcription
+          const rawOutput = stdout.trim();
           
           console.log('Whisper raw output:', stdout);
           console.log('Whisper stderr output:', stderr);
           
           // If stdout is empty but no error code, check stderr for actual output
-          if (!text && stderr.trim()) {
+          let textToProcess = rawOutput;
+          if (!textToProcess && stderr.trim()) {
             console.log('No stdout, checking stderr for transcription...');
-            text = stderr.trim();
+            textToProcess = stderr.trim();
           }
           
-          // Remove whisper timing/debug info, keep only the transcription
-          const lines = text.split('\n');
-          const transcriptionLines = lines.filter(line => {
-            const trimmedLine = line.trim();
-            // Filter out debug lines that contain timing info, model loading, etc.
-            // But be more careful to preserve actual transcription content
-            return trimmedLine.length > 0 &&
-                   !line.includes('whisper_init_') && 
-                   !line.includes('load time') &&
-                   !line.includes('mel time') &&
-                   !line.includes('encode time') &&
-                   !line.includes('decode time') &&
-                   !line.includes('total time') &&
-                   !line.includes('fallbacks') &&
-                   !line.includes('system_info') &&
-                   !line.includes('sampling parameters') &&
-                   !line.includes('threads =') &&
-                   !line.includes('progress =') &&
-                   !line.match(/^\[\d{2}:\d{2}:\d{2}\.\d{3} --> \d{2}:\d{2}:\d{2}\.\d{3}\]/) &&
-                   !line.match(/^\s*\d+\s*$/) &&
-                   !trimmedLine.startsWith('whisper_') &&
-                   (!trimmedLine.startsWith('[') || 
-                    (trimmedLine.startsWith('[') && !trimmedLine.includes('-->')));
-          });
+          // Store raw output (complete unfiltered output)
+          const rawText = textToProcess;
           
-          text = transcriptionLines.join(' ').trim();
-          console.log('Filtered transcription lines:', transcriptionLines);
-          console.log('Final extracted text:', text);
+          // Process all lines to extract transcription content
+          const lines = textToProcess.split('\n');
+          const transcriptionContent = [];
+          
+          for (const line of lines) {
+            const trimmedLine = line.trim();
+            
+            // Skip empty lines
+            if (!trimmedLine) continue;
+            
+            // Skip debug/system lines
+            if (trimmedLine.includes('whisper_init_') || 
+                trimmedLine.includes('load time') ||
+                trimmedLine.includes('mel time') ||
+                trimmedLine.includes('encode time') ||
+                trimmedLine.includes('decode time') ||
+                trimmedLine.includes('total time') ||
+                trimmedLine.includes('fallbacks') ||
+                trimmedLine.includes('system_info') ||
+                trimmedLine.includes('sampling parameters') ||
+                trimmedLine.includes('threads =') ||
+                trimmedLine.includes('progress =') ||
+                trimmedLine.includes('main: processing') ||
+                trimmedLine.includes('whisper_print_timings') ||
+                trimmedLine.startsWith('whisper_') ||
+                trimmedLine.match(/^whisper_model_load:/) ||
+                trimmedLine.match(/^whisper_init_state:/) ||
+                trimmedLine.match(/^whisper_init_with_params_no_state:/) ||
+                trimmedLine.match(/^\s*\d+\s*$/)) {
+              continue;
+            }
+            
+            // Extract text from timestamp lines
+            const timestampMatch = trimmedLine.match(/^\[\d{2}:\d{2}:\d{2}\.\d{3} --> \d{2}:\d{2}:\d{2}\.\d{3}\]\s*(.+)$/);
+            if (timestampMatch && timestampMatch[1].trim()) {
+              // Extract the text part after the timestamp
+              transcriptionContent.push(timestampMatch[1].trim());
+            } else if (!trimmedLine.match(/^\[\d{2}:\d{2}:\d{2}\.\d{3} --> \d{2}:\d{2}:\d{2}\.\d{3}\]/)) {
+              // If it's not a timestamp line and not empty, include it as is
+              transcriptionContent.push(trimmedLine);
+            }
+          }
+          
+          const filteredText = transcriptionContent.join(' ').trim();
+          
+          // Create final clean text (additional processing for final output)
+          const finalText = filteredText
+            .replace(/\s+/g, ' ')  // Normalize whitespace
+            .replace(/^\s+|\s+$/g, '')  // Trim
+            .replace(/([.!?])\s*([.!?])+/g, '$1');  // Remove duplicate punctuation
+          
+          console.log('Raw text length:', rawText.length);
+          console.log('Transcription content array:', transcriptionContent);
+          console.log('Filtered text length:', filteredText.length);
+          console.log('Final text length:', finalText.length);
+          console.log('Final extracted text:', finalText);
           
           // Validate that we actually got some transcription text
-          if (!text || text.length === 0) {
+          if (!finalText || finalText.length === 0) {
             reject(new Error(`No transcription text extracted from whisper output. Raw output: ${stdout}. Stderr: ${stderr}`));
             return;
           }
           
           resolve({
-            text,
+            text: finalText,
+            rawText: rawText,
+            filteredText: filteredText,
             language: 'detected'
           });
         } catch (parseError) {
