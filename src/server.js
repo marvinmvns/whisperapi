@@ -75,9 +75,20 @@ app.post('/transcribe', upload.single('audio'), async (req, res) => {
 
     const options = {
       language: process.env.WHISPER_LANGUAGE || req.body.language || 'pt',
-      translate: req.body.translate === 'true' || req.body.translate === true,
-      wordTimestamps: req.body.wordTimestamps === 'true' || req.body.wordTimestamps === true || req.body.wordTimestamps === undefined,
-      cleanup: true // Sempre fazer cleanup do arquivo de upload
+      translate: req.body.translate === 'true' || req.body.translate === true || false,
+      wordTimestamps: req.body.wordTimestamps === 'true' || req.body.wordTimestamps === true || true,
+      cleanup: req.body.cleanup === 'true' || req.body.cleanup === true || true,
+      outputInCsv: req.body.outputInCsv === 'true' || req.body.outputInCsv === true || false,
+      outputInJson: req.body.outputInJson === 'true' || req.body.outputInJson === true || false,
+      outputInJsonFull: req.body.outputInJsonFull === 'true' || req.body.outputInJsonFull === true || false,
+      outputInLrc: req.body.outputInLrc === 'true' || req.body.outputInLrc === true || false,
+      outputInSrt: req.body.outputInSrt === 'true' || req.body.outputInSrt === true || false,
+      outputInText: req.body.outputInText === 'true' || req.body.outputInText === true || true,
+      outputInVtt: req.body.outputInVtt === 'true' || req.body.outputInVtt === true || false,
+      outputInWords: req.body.outputInWords === 'true' || req.body.outputInWords === true || false,
+      splitOnWord: req.body.splitOnWord === 'true' || req.body.splitOnWord === true || false,
+      timestamps_length: req.body.timestamps_length ? parseInt(req.body.timestamps_length) : 30,
+      removeTimestamps: req.body.removeTimestamps === 'true' || req.body.removeTimestamps === true || false
     };
 
     const jobId = queueManager.addJob(req.file.path, req.file.originalname, options);
