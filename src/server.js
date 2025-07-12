@@ -75,8 +75,8 @@ app.post('/transcribe', upload.single('audio'), async (req, res) => {
 
     const options = {
       language: process.env.WHISPER_LANGUAGE || req.body.language || 'pt',
-      translate: req.body.translate === 'true',
-      wordTimestamps: req.body.wordTimestamps !== 'false',
+      translate: req.body.translate === 'true' || req.body.translate === true,
+      wordTimestamps: req.body.wordTimestamps === 'true' || req.body.wordTimestamps === true || req.body.wordTimestamps === undefined,
       cleanup: true // Sempre fazer cleanup do arquivo de upload
     };
 

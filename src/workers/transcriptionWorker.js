@@ -2,6 +2,7 @@ const { parentPort } = require('worker_threads');
 const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+const { autoDownloadModel, MODEL_OBJECT } = require('../utils/autoDownloadModel');
 
 class TranscriptionWorker {
   constructor() {
@@ -10,23 +11,42 @@ class TranscriptionWorker {
 
   async init() {
     try {
-      const modelPath = process.env.WHISPER_MODEL_PATH || './node_modules/nodejs-whisper/cpp/whisper.cpp/models/ggml-large-v3-turbo.bin';
-      const whisperBinary = process.env.WHISPER_BINARY || './node_modules/nodejs-whisper/cpp/whisper.cpp/build/bin/whisper-cli';
+      let modelPath = process.env.WHISPER_MODEL_PATH;
+      let whisperBinary = process.env.WHISPER_BINARY || './node_modules/nodejs-whisper/cpp/whisper.cpp/build/bin/whisper-cli';
       
-      // Validate that the model file exists, auto-download if needed
-      if (!fs.existsSync(modelPath)) {
-        const autoDownloadModel = process.env.AUTO_DOWNLOAD_MODEL;
-        if (autoDownloadModel) {
-          console.log(`Model not found at ${modelPath}, attempting auto-download of ${autoDownloadModel}...`);
+      // Auto-download model if needed
+      const autoDownloadModelName = process.env.AUTO_DOWNLOAD_MODEL;
+      if (autoDownloadModelName) {
+        // Generate expected model path
+        const expectedModelPath = `./node_modules/nodejs-whisper/cpp/whisper.cpp/models/${MODEL_OBJECT[autoDownloadModelName]}`;
+        
+        // Check if model exists, if not download it
+        if (!fs.existsSync(expectedModelPath)) {
+          console.log(`Model not found at ${expectedModelPath}, attempting auto-download of ${autoDownloadModelName}...`);
           try {
-            await this.autoDownloadModel(autoDownloadModel, modelPath);
-            console.log(`Auto-download successful, model available at ${modelPath}`);
+            const result = await autoDownloadModel(autoDownloadModelName);
+            console.log(`Auto-download successful: ${result.message}`);
+            modelPath = result.modelPath;
+            if (result.binaryPath) {
+              whisperBinary = result.binaryPath;
+            }
           } catch (downloadError) {
-            throw new Error(`Model not found at ${modelPath} and auto-download failed: ${downloadError.message}`);
+            throw new Error(`Auto-download failed: ${downloadError.message}`);
           }
         } else {
-          throw new Error(`Model not found at ${modelPath}`);
+          console.log(`Model already exists at ${expectedModelPath}`);
+          modelPath = expectedModelPath;
         }
+      }
+      
+      // Use default path if no model path set
+      if (!modelPath) {
+        modelPath = './node_modules/nodejs-whisper/cpp/whisper.cpp/models/ggml-large-v3-turbo.bin';
+      }
+      
+      // Final validation that model exists
+      if (!fs.existsSync(modelPath)) {
+        throw new Error(`Model not found at ${modelPath}. Set AUTO_DOWNLOAD_MODEL environment variable to auto-download.`);
       }
 
       // Validate whisper binary exists
@@ -108,46 +128,6 @@ class TranscriptionWorker {
     }
   }
 
-  async autoDownloadModel(modelName, targetPath) {
-    try {
-      console.log(`Downloading model: ${modelName}...`);
-      
-      // Create target directory if it doesn't exist
-      const targetDir = path.dirname(targetPath);
-      if (!fs.existsSync(targetDir)) {
-        fs.mkdirSync(targetDir, { recursive: true });
-        console.log(`Created directory: ${targetDir}`);
-      }
-
-      // Import nodejs-whisper for auto-download
-      const { nodewhisper } = require('nodejs-whisper');
-
-      // Use nodejs-whisper's auto-download with the model name
-      await nodewhisper('dummy.wav', {
-        autoDownloadModelName: modelName,
-        withCuda: false
-      }).catch(() => {
-        // This will fail because dummy.wav doesn't exist, but the model will be downloaded
-        console.log('Model download completed (expected transcription error ignored)');
-      });
-
-      // Check if model was downloaded to nodejs-whisper's default location
-      const nodejsWhisperModelsDir = path.join(__dirname, '../../node_modules/nodejs-whisper/cpp/whisper.cpp/models');
-      const downloadedModelPath = path.join(nodejsWhisperModelsDir, `ggml-${modelName}.bin`);
-      
-      if (fs.existsSync(downloadedModelPath)) {
-        console.log(`Model successfully downloaded to: ${downloadedModelPath}`);
-        // Update the model path for this worker instance
-        this.modelPath = downloadedModelPath;
-      } else {
-        throw new Error(`Model download failed: ${downloadedModelPath} not found`);
-      }
-      
-    } catch (error) {
-      console.error('Auto-download failed:', error.message);
-      throw new Error(`Failed to auto-download model ${modelName}: ${error.message}`);
-    }
-  }
 
   async transcribeAudio(filePath, options = {}) {
     if (!this.modelPath || !this.whisperBinary) {
@@ -179,8 +159,8 @@ class TranscriptionWorker {
       }
 
       // Add word timestamps
-      if (options.wordTimestamps !== false) {
-        args.push('--max-len', '1');
+      if (options.wordTimestamps === true) {
+        args.push('--word-timestamps');
       }
 
       const result = await this.runWhisperCommand(args);
