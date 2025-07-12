@@ -10,7 +10,7 @@ const AudioValidator = require('./modules/audioValidator');
 const QueueManager = require('./modules/queueManager');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3001;
 const MAX_WORKERS = parseInt(process.env.MAX_WORKERS) || 4;
 const UPLOAD_DIR = process.env.UPLOAD_DIR || './uploads';
 const TEMP_DIR = process.env.TEMP_DIR || './temp';
@@ -74,10 +74,10 @@ app.post('/transcribe', upload.single('audio'), async (req, res) => {
     }
 
     const options = {
-      language: req.body.language || 'auto',
+      language: process.env.WHISPER_LANGUAGE || req.body.language || 'pt',
       translate: req.body.translate === 'true',
       wordTimestamps: req.body.wordTimestamps !== 'false',
-      cleanup: req.body.cleanup !== 'false'
+      cleanup: true // Sempre fazer cleanup do arquivo de upload
     };
 
     const jobId = queueManager.addJob(req.file.path, req.file.originalname, options);
