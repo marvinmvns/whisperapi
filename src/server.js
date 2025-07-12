@@ -23,7 +23,7 @@ if (!fs.existsSync(TEMP_DIR)) {
   fs.mkdirSync(TEMP_DIR, { recursive: true });
 }
 
-const queueManager = new QueueManager(MAX_WORKERS);
+const queueManager = new QueueManager(MAX_WORKERS, TEMP_DIR);
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -194,6 +194,40 @@ app.get('/formats', (req, res) => {
   });
 });
 
+app.get('/completed-jobs', (req, res) => {
+  try {
+    const completedJobs = queueManager.getCompletedJobs();
+    
+    res.json({
+      totalCompleted: completedJobs.length,
+      completedJobs,
+      message: 'All completed transcription jobs'
+    });
+
+  } catch (error) {
+    console.error('Completed jobs error:', error);
+    res.status(500).json({
+      error: 'Failed to get completed jobs',
+      code: 'COMPLETED_JOBS_ERROR'
+    });
+  }
+});
+
+app.get('/all-status', (req, res) => {
+  try {
+    const allStatus = queueManager.getAllJobsStatus();
+    
+    res.json(allStatus);
+
+  } catch (error) {
+    console.error('All status error:', error);
+    res.status(500).json({
+      error: 'Failed to get all jobs status',
+      code: 'ALL_STATUS_ERROR'
+    });
+  }
+});
+
 app.use((error, req, res, next) => {
   console.error('Server error:', error);
   
@@ -226,7 +260,9 @@ app.use((req, res) => {
       'GET /estimate',
       'GET /queue-estimate',
       'GET /formats',
-      'GET /health'
+      'GET /health',
+      'GET /completed-jobs',
+      'GET /all-status'
     ]
   });
 });
