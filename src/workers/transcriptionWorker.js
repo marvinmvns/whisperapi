@@ -158,10 +158,8 @@ class TranscriptionWorker {
         args.push('--translate');
       }
 
-      // Add word timestamps
-      if (options.wordTimestamps === true) {
-        args.push('--word-timestamps');
-      }
+      // Note: --word-timestamps is not supported by this version of whisper-cli
+      // Word timestamp functionality would need to be implemented using JSON output parsing
 
       const result = await this.runWhisperCommand(args);
       const processingTime = Math.ceil((Date.now() - startTime) / 1000);
@@ -241,28 +239,56 @@ class TranscriptionWorker {
           // Parse whisper output - extract just the transcribed text
           let text = stdout.trim();
           
+          console.log('Whisper raw output:', stdout);
+          console.log('Whisper stderr output:', stderr);
+          
+          // If stdout is empty but no error code, check stderr for actual output
+          if (!text && stderr.trim()) {
+            console.log('No stdout, checking stderr for transcription...');
+            text = stderr.trim();
+          }
+          
           // Remove whisper timing/debug info, keep only the transcription
           const lines = text.split('\n');
           const transcriptionLines = lines.filter(line => {
+            const trimmedLine = line.trim();
             // Filter out debug lines that contain timing info, model loading, etc.
-            return !line.includes('whisper_') && 
+            // But be more careful to preserve actual transcription content
+            return trimmedLine.length > 0 &&
+                   !line.includes('whisper_init_') && 
                    !line.includes('load time') &&
                    !line.includes('mel time') &&
                    !line.includes('encode time') &&
                    !line.includes('decode time') &&
                    !line.includes('total time') &&
                    !line.includes('fallbacks') &&
-                   line.trim().length > 0;
+                   !line.includes('system_info') &&
+                   !line.includes('sampling parameters') &&
+                   !line.includes('threads =') &&
+                   !line.includes('progress =') &&
+                   !line.match(/^\[\d{2}:\d{2}:\d{2}\.\d{3} --> \d{2}:\d{2}:\d{2}\.\d{3}\]/) &&
+                   !line.match(/^\s*\d+\s*$/) &&
+                   !trimmedLine.startsWith('whisper_') &&
+                   (!trimmedLine.startsWith('[') || 
+                    (trimmedLine.startsWith('[') && !trimmedLine.includes('-->')));
           });
           
           text = transcriptionLines.join(' ').trim();
+          console.log('Filtered transcription lines:', transcriptionLines);
+          console.log('Final extracted text:', text);
+          
+          // Validate that we actually got some transcription text
+          if (!text || text.length === 0) {
+            reject(new Error(`No transcription text extracted from whisper output. Raw output: ${stdout}. Stderr: ${stderr}`));
+            return;
+          }
           
           resolve({
             text,
             language: 'detected'
           });
         } catch (parseError) {
-          reject(new Error(`Failed to parse whisper output: ${parseError.message}`));
+          reject(new Error(`Failed to parse whisper output: ${parseError.message}. Raw output: ${stdout}. Stderr: ${stderr}`));
         }
       });
 
