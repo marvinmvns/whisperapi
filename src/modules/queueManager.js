@@ -1,15 +1,17 @@
 const { Worker } = require('worker_threads');
 const { v4: uuidv4 } = require('uuid');
 const path = require('path');
+const StatusPersistence = require('./statusPersistence');
 
 class QueueManager {
-  constructor(maxWorkers = 4) {
+  constructor(maxWorkers = 4, tempDir = './temp') {
     this.maxWorkers = maxWorkers;
     this.workers = [];
     this.queue = [];
     this.jobs = new Map();
     this.processingTimes = [];
     this.activeJobs = 0;
+    this.statusPersistence = new StatusPersistence(tempDir);
     
     this.initWorkers();
   }
@@ -103,6 +105,7 @@ class QueueManager {
     job.status = 'completed';
     job.result = result;
     job.completedAt = new Date();
+    job.processingTime = processingTime;
     
     if (processingTime) {
       this.processingTimes.push(processingTime);
@@ -110,6 +113,9 @@ class QueueManager {
         this.processingTimes.shift();
       }
     }
+
+    // Save completed job to JSON
+    this.statusPersistence.addCompletedJob(job);
 
     this.releaseWorker();
   }
@@ -145,6 +151,11 @@ class QueueManager {
   getJobStatus(jobId) {
     const job = this.jobs.get(jobId);
     if (!job) {
+      // Check in persistent storage for completed jobs
+      const completedJob = this.statusPersistence.getJobById(jobId);
+      if (completedJob) {
+        return completedJob;
+      }
       return { error: 'Job not found' };
     }
 
@@ -156,7 +167,8 @@ class QueueManager {
       createdAt: job.createdAt,
       startedAt: job.startedAt,
       completedAt: job.completedAt,
-      retries: job.retries
+      retries: job.retries,
+      processingTime: job.processingTime
     };
   }
 
@@ -192,6 +204,14 @@ class QueueManager {
     
     const jobsPerWorker = Math.ceil(queuePosition / this.maxWorkers);
     return jobsPerWorker * averageProcessingTime;
+  }
+
+  getCompletedJobs() {
+    return this.statusPersistence.getCompletedJobs();
+  }
+
+  getAllJobsStatus() {
+    return this.statusPersistence.getAllJobsStatus();
   }
 
   cleanup() {
