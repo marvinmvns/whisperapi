@@ -94,10 +94,6 @@ function downloadModel(modelName) {
     'small.en': 'ggml-small.en.bin',
     'medium': 'ggml-medium.bin',
     'medium.en': 'ggml-medium.en.bin',
-    'large': 'ggml-large.bin',
-    'large-v1': 'ggml-large-v1.bin',
-    'large-v2': 'ggml-large-v2.bin',
-    'large-v3': 'ggml-large-v3.bin',
     'large-v3-turbo': 'ggml-large-v3-turbo.bin'
   };
 
