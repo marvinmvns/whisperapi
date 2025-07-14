@@ -23,7 +23,6 @@ const MODELS_LIST = Object.keys(MODEL_OBJECT);
 const WHISPER_CPP_PATH = path.join(process.cwd(), 'node_modules', 'nodejs-whisper', 'cpp', 'whisper.cpp');
 
 async function autoDownloadModel(autoDownloadModelName, withCuda = false) {
-  const projectDir = process.cwd();
 
   if (!autoDownloadModelName) {
     throw new Error('[WhisperAPI] Error: Model name must be provided.');
@@ -51,29 +50,27 @@ async function autoDownloadModel(autoDownloadModelName, withCuda = false) {
       fs.mkdirSync(modelDirectory, { recursive: true });
     }
 
-    // Change to models directory
-    process.chdir(modelDirectory);
-
-    // Determine script path based on platform
-    let scriptPath = './download-ggml-model.sh';
+    // Determine script path based on platform (use absolute path)
+    let scriptPath = path.join(modelDirectory, 'download-ggml-model.sh');
     if (process.platform === 'win32') {
-      scriptPath = 'download-ggml-model.cmd';
+      scriptPath = path.join(modelDirectory, 'download-ggml-model.cmd');
     }
 
     // Make script executable on Unix systems
     if (process.platform !== 'win32') {
       try {
-        execSync(`chmod +x ${scriptPath}`, { stdio: 'inherit' });
+        execSync(`chmod +x "${scriptPath}"`, { stdio: 'inherit' });
       } catch (error) {
         console.warn(`[WhisperAPI] Warning: Could not make ${scriptPath} executable:`, error.message);
       }
     }
 
-    // Execute download script
+    // Execute download script with absolute path and working directory
     console.log(`[WhisperAPI] Executing: ${scriptPath} ${autoDownloadModelName}`);
-    execSync(`${scriptPath} ${autoDownloadModelName}`, { 
+    execSync(`"${scriptPath}" ${autoDownloadModelName}`, { 
       stdio: 'inherit',
-      timeout: 300000 // 5 minutes timeout
+      timeout: 300000, // 5 minutes timeout
+      cwd: modelDirectory
     });
 
     // Verify download
@@ -83,8 +80,7 @@ async function autoDownloadModel(autoDownloadModelName, withCuda = false) {
 
     console.log(`[WhisperAPI] Model downloaded successfully: ${modelFilePath}`);
 
-    // Change back to whisper.cpp directory to build
-    process.chdir(WHISPER_CPP_PATH);
+    // Build whisper.cpp using absolute path and working directory
 
     // Check if build directory exists, if not, build whisper.cpp
     const buildDir = path.join(WHISPER_CPP_PATH, 'build');
@@ -100,12 +96,12 @@ async function autoDownloadModel(autoDownloadModelName, withCuda = false) {
         configureCommand += ' -DGGML_CUDA=1';
       }
 
-      execSync(configureCommand, { stdio: 'inherit' });
+      execSync(configureCommand, { stdio: 'inherit', cwd: WHISPER_CPP_PATH });
 
       // Build the project
       console.log('[WhisperAPI] Building whisper.cpp...');
       const buildCommand = 'cmake --build build --config Release';
-      execSync(buildCommand, { stdio: 'inherit' });
+      execSync(buildCommand, { stdio: 'inherit', cwd: WHISPER_CPP_PATH });
 
       // Verify build
       if (!fs.existsSync(whisperBinary)) {
@@ -124,11 +120,7 @@ async function autoDownloadModel(autoDownloadModelName, withCuda = false) {
 
   } catch (error) {
     console.error('[WhisperAPI] Error in autoDownloadModel:', error.message);
-    process.chdir(projectDir);
     throw error;
-  } finally {
-    // Always return to project directory
-    process.chdir(projectDir);
   }
 }
 
