@@ -12,7 +12,9 @@
     "setup": "node scripts/postinstall.js",
     "setup:model": "node scripts/postinstall.js",
     "check:models": "node scripts/check-models.js",
-    "models": "node scripts/check-models.js"
+    "models": "node scripts/check-models.js",
+    "validate-system": "node scripts/validate-system.js",
+    "validate": "node scripts/validate-system.js"
   },
   "keywords": [
     "whisper",

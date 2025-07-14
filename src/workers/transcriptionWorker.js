@@ -3,14 +3,36 @@ const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const { autoDownloadModel, MODEL_OBJECT } = require('../utils/autoDownloadModel');
+const FFmpegValidator = require('../utils/ffmpegValidator');
 
 class TranscriptionWorker {
   constructor() {
+    this.ffmpegValidator = new FFmpegValidator();
     this.init();
   }
 
   async init() {
     try {
+      // Validate ffmpeg first
+      console.log('[TranscriptionWorker] Validating ffmpeg...');
+      const ffmpegValidation = await this.ffmpegValidator.validateFFmpeg();
+      
+      if (!ffmpegValidation.success) {
+        console.error('[TranscriptionWorker] ffmpeg validation failed:', ffmpegValidation.message);
+        if (ffmpegValidation.instructions) {
+          console.log('[TranscriptionWorker] Manual installation instructions:');
+          console.log(ffmpegValidation.instructions);
+        }
+        throw new Error(`ffmpeg validation failed: ${ffmpegValidation.message}`);
+      }
+      
+      console.log('[TranscriptionWorker] ffmpeg validation successful');
+      
+      // Test ffmpeg functionality
+      const functionalityTest = await this.ffmpegValidator.testFFmpegFunctionality();
+      if (!functionalityTest) {
+        throw new Error('ffmpeg functionality test failed');
+      }
       let modelPath = process.env.WHISPER_MODEL_PATH;
       let whisperBinary = process.env.WHISPER_BINARY || './node_modules/nodejs-whisper/cpp/whisper.cpp/build/bin/whisper-cli';
       
@@ -183,6 +205,12 @@ class TranscriptionWorker {
   }
 
   async convertToWav(inputPath) {
+    // Check ffmpeg validation status
+    const ffmpegStatus = this.ffmpegValidator.getStatus();
+    if (!ffmpegStatus.isValidated) {
+      throw new Error('ffmpeg not validated. Please ensure ffmpeg is properly installed and functional.');
+    }
+
     const outputPath = inputPath.replace(/\.[^.]+$/, '.wav');
     
     return new Promise((resolve, reject) => {
@@ -203,14 +231,14 @@ class TranscriptionWorker {
 
       ffmpeg.on('close', (code) => {
         if (code !== 0) {
-          reject(new Error(`FFmpeg conversion failed with code ${code}: ${stderr}`));
+          reject(new Error(`FFmpeg conversion failed with code ${code}: ${stderr}. Please ensure ffmpeg is properly installed and functional.`));
           return;
         }
         resolve(outputPath);
       });
 
       ffmpeg.on('error', (error) => {
-        reject(new Error(`Failed to start FFmpeg: ${error.message}`));
+        reject(new Error(`Failed to start FFmpeg: ${error.message}. Please ensure ffmpeg is properly installed and accessible.`));
       });
     });
   }

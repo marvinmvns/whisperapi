@@ -2,9 +2,19 @@ const { Worker } = require('worker_threads');
 const { v4: uuidv4 } = require('uuid');
 const path = require('path');
 const StatusPersistence = require('./statusPersistence');
+const WorkerAutoScaler = require('../utils/workerAutoScaler');
 
 class QueueManager {
-  constructor(maxWorkers = 4, tempDir = './temp') {
+  constructor(maxWorkers = 4, tempDir = './temp', autoScaleConfig = { enabled: true }) {
+    // Support both old boolean format and new config object format
+    if (typeof autoScaleConfig === 'boolean') {
+      this.autoScaleConfig = { enabled: autoScaleConfig };
+    } else {
+      this.autoScaleConfig = autoScaleConfig;
+    }
+    
+    this.autoScale = this.autoScaleConfig.enabled;
+    this.autoScaler = new WorkerAutoScaler(this.autoScaleConfig);
     this.maxWorkers = maxWorkers;
     this.workers = [];
     this.queue = [];
@@ -12,11 +22,29 @@ class QueueManager {
     this.processingTimes = [];
     this.activeJobs = 0;
     this.statusPersistence = new StatusPersistence(tempDir);
+    this.lastScaleCheck = 0;
+    this.scaleCheckInterval = this.autoScaleConfig.interval || 60000;
     
     this.initWorkers();
   }
 
-  initWorkers() {
+  async initWorkers() {
+    if (this.autoScale) {
+      try {
+        console.log('🔍 Detecting optimal worker count...');
+        const workerInfo = await this.autoScaler.getOptimalWorkerCount();
+        this.maxWorkers = workerInfo.recommended;
+        console.log(`✅ Auto-scaled to ${this.maxWorkers} workers based on system resources`);
+        console.log(`   CPU: ${workerInfo.systemInfo.cpuCount} cores, RAM: ${workerInfo.systemInfo.memoryGB}GB`);
+        console.log(`   Memory usage: ${workerInfo.systemInfo.memoryUsagePercent}%, Load: ${workerInfo.systemInfo.currentLoad}%`);
+        if (workerInfo.systemInfo.hasGpu) {
+          console.log(`   GPU detected: ${workerInfo.systemInfo.gpuCount} device(s)`);
+        }
+      } catch (error) {
+        console.warn('⚠️  Auto-scaling failed, using default worker count:', error.message);
+      }
+    }
+    
     for (let i = 0; i < this.maxWorkers; i++) {
       this.createWorker();
     }
@@ -74,8 +102,11 @@ class QueueManager {
     return jobId;
   }
 
-  processQueue() {
+  async processQueue() {
     if (this.queue.length === 0) return;
+
+    // Verificar se precisa reescalar workers
+    await this.checkAndScaleWorkers();
 
     const availableWorker = this.workers.find(w => !w.busy);
     if (!availableWorker) return;
@@ -172,6 +203,48 @@ class QueueManager {
     };
   }
 
+  async checkAndScaleWorkers() {
+    if (!this.autoScale) return;
+    
+    const now = Date.now();
+    if (now - this.lastScaleCheck < this.scaleCheckInterval) return;
+    
+    this.lastScaleCheck = now;
+    
+    try {
+      const workerInfo = await this.autoScaler.getOptimalWorkerCount();
+      const recommendedWorkers = workerInfo.recommended;
+      
+      if (recommendedWorkers !== this.maxWorkers) {
+        console.log(`🔄 Scaling workers: ${this.maxWorkers} -> ${recommendedWorkers}`);
+        
+        if (recommendedWorkers > this.maxWorkers) {
+          // Adicionar workers
+          const workersToAdd = recommendedWorkers - this.maxWorkers;
+          for (let i = 0; i < workersToAdd; i++) {
+            this.createWorker();
+          }
+        } else if (recommendedWorkers < this.maxWorkers) {
+          // Remover workers (apenas os não ocupados)
+          const workersToRemove = this.maxWorkers - recommendedWorkers;
+          let removedCount = 0;
+          
+          for (let i = this.workers.length - 1; i >= 0 && removedCount < workersToRemove; i--) {
+            if (!this.workers[i].busy) {
+              this.workers[i].worker.terminate();
+              this.workers.splice(i, 1);
+              removedCount++;
+            }
+          }
+        }
+        
+        this.maxWorkers = recommendedWorkers;
+      }
+    } catch (error) {
+      console.warn('⚠️  Worker scaling check failed:', error.message);
+    }
+  }
+
   getQueueStats() {
     const pendingJobs = this.queue.length;
     const averageProcessingTime = this.getAverageProcessingTime();
@@ -184,7 +257,8 @@ class QueueManager {
       availableWorkers: this.workers.filter(w => !w.busy).length,
       averageProcessingTime,
       estimatedWaitTime,
-      totalProcessingTime: pendingJobs * averageProcessingTime
+      totalProcessingTime: pendingJobs * averageProcessingTime,
+      autoScalingEnabled: this.autoScale
     };
   }
 
@@ -212,6 +286,21 @@ class QueueManager {
 
   getAllJobsStatus() {
     return this.statusPersistence.getAllJobsStatus();
+  }
+
+  async getSystemReport() {
+    if (!this.autoScale) {
+      return { 
+        message: 'Auto-scaling is disabled',
+        autoScalerConfig: this.autoScaleConfig
+      };
+    }
+    
+    const report = await this.autoScaler.getSystemReport();
+    return {
+      ...report,
+      autoScalerConfig: this.autoScaler.getConfig()
+    };
   }
 
   cleanup() {

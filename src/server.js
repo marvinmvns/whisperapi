@@ -8,12 +8,26 @@ require('dotenv').config();
 
 const AudioValidator = require('./modules/audioValidator');
 const QueueManager = require('./modules/queueManager');
+const SystemValidator = require('./utils/systemValidator');
+const UploadsCleanup = require('./utils/uploadsCleanup');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 const MAX_WORKERS = parseInt(process.env.MAX_WORKERS) || 4;
+const AUTO_SCALE = process.env.AUTO_SCALE !== 'false'; // Habilitado por padrão
 const UPLOAD_DIR = process.env.UPLOAD_DIR || './uploads';
 const TEMP_DIR = process.env.TEMP_DIR || './temp';
+
+// Auto Scaler Configuration
+const AUTO_SCALE_CONFIG = {
+  enabled: AUTO_SCALE,
+  interval: parseInt(process.env.AUTO_SCALE_INTERVAL) || 60000,
+  cacheTTL: parseInt(process.env.AUTO_SCALE_CACHE_TTL) || 30000,
+  minWorkers: parseInt(process.env.AUTO_SCALE_MIN_WORKERS) || 1,
+  maxWorkers: parseInt(process.env.AUTO_SCALE_MAX_WORKERS) || 8,
+  memoryThreshold: parseInt(process.env.AUTO_SCALE_MEMORY_THRESHOLD) || 80,
+  cpuThreshold: parseInt(process.env.AUTO_SCALE_CPU_THRESHOLD) || 80
+};
 
 if (!fs.existsSync(UPLOAD_DIR)) {
   fs.mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -23,7 +37,7 @@ if (!fs.existsSync(TEMP_DIR)) {
   fs.mkdirSync(TEMP_DIR, { recursive: true });
 }
 
-const queueManager = new QueueManager(MAX_WORKERS, TEMP_DIR);
+const queueManager = new QueueManager(MAX_WORKERS, TEMP_DIR, AUTO_SCALE_CONFIG);
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -239,6 +253,21 @@ app.get('/all-status', (req, res) => {
   }
 });
 
+app.get('/system-report', async (req, res) => {
+  try {
+    const systemReport = await queueManager.getSystemReport();
+    
+    res.json(systemReport);
+
+  } catch (error) {
+    console.error('System report error:', error);
+    res.status(500).json({
+      error: 'Failed to get system report',
+      code: 'SYSTEM_REPORT_ERROR'
+    });
+  }
+});
+
 app.use((error, req, res, next) => {
   console.error('Server error:', error);
   
@@ -273,7 +302,8 @@ app.use((req, res) => {
       'GET /formats',
       'GET /health',
       'GET /completed-jobs',
-      'GET /all-status'
+      'GET /all-status',
+      'GET /system-report'
     ]
   });
 });
@@ -291,12 +321,51 @@ process.on('SIGINT', () => {
 });
 
 if (require.main === module) {
-  app.listen(PORT, () => {
-    console.log(`🎤 Whisper API Server running on port ${PORT}`);
-    console.log(`📊 Worker threads: ${MAX_WORKERS}`);
-    console.log(`📁 Upload directory: ${UPLOAD_DIR}`);
-    console.log(`🔊 Supported formats: ${AudioValidator.getSupportedFormats().join(', ')}`);
-  });
+  async function startServer() {
+    try {
+      // Validate system before starting server
+      console.log('🔍 Validating system dependencies...');
+      const systemValidator = new SystemValidator();
+      const validationResult = await systemValidator.validateSystem();
+      
+      if (!validationResult.success) {
+        console.error('❌ System validation failed!');
+        console.error(systemValidator.getValidationReport());
+        console.error('Please fix the issues above before starting the server.');
+        process.exit(1);
+      }
+      
+      console.log('✅ System validation completed successfully!');
+      
+      // Clean up uploads folder
+      const uploadsCleanup = new UploadsCleanup(UPLOAD_DIR);
+      await uploadsCleanup.cleanupUploads();
+      
+      // Start the server
+      app.listen(PORT, () => {
+        console.log(`🎤 Whisper API Server running on port ${PORT}`);
+        console.log(`📊 Worker auto-scaling: ${AUTO_SCALE_CONFIG.enabled ? 'enabled' : 'disabled'}`);
+        
+        if (AUTO_SCALE_CONFIG.enabled) {
+          console.log(`   ⚙️  Auto-scaling configuration:`);
+          console.log(`      - Min workers: ${AUTO_SCALE_CONFIG.minWorkers}`);
+          console.log(`      - Max workers: ${AUTO_SCALE_CONFIG.maxWorkers}`);
+          console.log(`      - Scale interval: ${AUTO_SCALE_CONFIG.interval}ms`);
+          console.log(`      - Memory threshold: ${AUTO_SCALE_CONFIG.memoryThreshold}%`);
+          console.log(`      - CPU threshold: ${AUTO_SCALE_CONFIG.cpuThreshold}%`);
+        }
+        
+        console.log(`📁 Upload directory: ${UPLOAD_DIR}`);
+        console.log(`🔊 Supported formats: ${AudioValidator.getSupportedFormats().join(', ')}`);
+        console.log('🚀 Server is ready to accept requests!');
+      });
+    } catch (error) {
+      console.error('💥 Failed to start server:', error.message);
+      process.exit(1);
+    }
+  }
+  
+  startServer();
 }
 
 module.exports = app;
