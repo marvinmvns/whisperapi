@@ -4,10 +4,12 @@ const fs = require('fs');
 const path = require('path');
 const { autoDownloadModel, MODEL_OBJECT } = require('../utils/autoDownloadModel');
 const FFmpegValidator = require('../utils/ffmpegValidator');
+const ModelSelector = require('../utils/modelSelector');
 
 class TranscriptionWorker {
   constructor() {
     this.ffmpegValidator = new FFmpegValidator();
+    this.modelSelector = new ModelSelector();
     this.init();
   }
 
@@ -36,8 +38,15 @@ class TranscriptionWorker {
       let modelPath = process.env.WHISPER_MODEL_PATH;
       let whisperBinary = process.env.WHISPER_BINARY || './node_modules/nodejs-whisper/cpp/whisper.cpp/build/bin/whisper-cli';
       
+      // Use ModelSelector to determine which model to use
+      const modelSelection = await this.modelSelector.selectModel();
+      const selectedModel = modelSelection.model;
+      
+      console.log(`[TranscriptionWorker] Model selection: ${selectedModel}`);
+      console.log(`[TranscriptionWorker] Selection reason: ${modelSelection.reason}`);
+      
       // Auto-download model if needed
-      const autoDownloadModelName = process.env.AUTO_DOWNLOAD_MODEL;
+      const autoDownloadModelName = selectedModel;
       if (autoDownloadModelName) {
         // Generate expected model path
         const expectedModelPath = `./node_modules/nodejs-whisper/cpp/whisper.cpp/models/${MODEL_OBJECT[autoDownloadModelName]}`;
@@ -105,8 +114,6 @@ class TranscriptionWorker {
       'ggml-small.en.bin': 'small.en',
       'ggml-medium.bin': 'medium',
       'ggml-medium.en.bin': 'medium.en',
-      'ggml-large.bin': 'large',
-      'ggml-large-v1.bin': 'large-v1',
       'ggml-large-v3-turbo.bin': 'large-v3-turbo'
     };
     

@@ -10,6 +10,7 @@ const AudioValidator = require('./modules/audioValidator');
 const QueueManager = require('./modules/queueManager');
 const SystemValidator = require('./utils/systemValidator');
 const UploadsCleanup = require('./utils/uploadsCleanup');
+const ModelSelector = require('./utils/modelSelector');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -268,6 +269,29 @@ app.get('/system-report', async (req, res) => {
   }
 });
 
+app.get('/model-info', async (req, res) => {
+  try {
+    const modelSelector = new ModelSelector();
+    const modelSelection = await modelSelector.selectModel();
+    const systemInfo = modelSelector.getSystemInfo();
+    const modelRequirements = modelSelector.getAllModelRequirements();
+    
+    res.json({
+      selectedModel: modelSelection,
+      systemInfo,
+      modelRequirements,
+      message: 'Current model selection and system information'
+    });
+
+  } catch (error) {
+    console.error('Model info error:', error);
+    res.status(500).json({
+      error: 'Failed to get model information',
+      code: 'MODEL_INFO_ERROR'
+    });
+  }
+});
+
 app.use((error, req, res, next) => {
   console.error('Server error:', error);
   
@@ -303,7 +327,8 @@ app.use((req, res) => {
       'GET /health',
       'GET /completed-jobs',
       'GET /all-status',
-      'GET /system-report'
+      'GET /system-report',
+      'GET /model-info'
     ]
   });
 });
