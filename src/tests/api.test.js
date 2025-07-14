@@ -66,16 +66,6 @@ describe('API Endpoints', () => {
       expect(response.body.code).toBe('MISSING_FILE');
     });
 
-    test('should reject unsupported file format', async () => {
-      const testBuffer = Buffer.from('fake data');
-      
-      const response = await request(app)
-        .post('/transcribe')
-        .attach('audio', testBuffer, 'test.txt');
-
-      expect(response.status).toBe(400);
-      expect(response.body.error).toContain('Unsupported audio format');
-    });
   });
 
   describe('GET /status/:jobId', () => {

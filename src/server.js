@@ -290,11 +290,13 @@ process.on('SIGINT', () => {
   process.exit(0);
 });
 
-app.listen(PORT, () => {
-  console.log(`🎤 Whisper API Server running on port ${PORT}`);
-  console.log(`📊 Worker threads: ${MAX_WORKERS}`);
-  console.log(`📁 Upload directory: ${UPLOAD_DIR}`);
-  console.log(`🔊 Supported formats: ${AudioValidator.getSupportedFormats().join(', ')}`);
-});
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`🎤 Whisper API Server running on port ${PORT}`);
+    console.log(`📊 Worker threads: ${MAX_WORKERS}`);
+    console.log(`📁 Upload directory: ${UPLOAD_DIR}`);
+    console.log(`🔊 Supported formats: ${AudioValidator.getSupportedFormats().join(', ')}`);
+  });
+}
 
 module.exports = app;
