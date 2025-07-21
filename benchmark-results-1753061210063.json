@@ -1,0 +1,161 @@
+{
+  "timestamp": "2025-07-21T01:26:50.063Z",
+  "summary": [
+    {
+      "engine": "whisper.cpp",
+      "runs": 2,
+      "avgProcessingTime": "73.5",
+      "avgTotalTime": "75.1",
+      "avgTextLength": 1391,
+      "fastest": "18.0",
+      "slowest": "129.0"
+    },
+    {
+      "engine": "faster-whisper",
+      "runs": 1,
+      "avgProcessingTime": "59.0",
+      "avgTotalTime": "60.1",
+      "avgTextLength": 2790,
+      "fastest": "59.0",
+      "slowest": "59.0"
+    }
+  ],
+  "detailed": {
+    "whisper.cpp": {
+      "files": [
+        {
+          "success": true,
+          "engine": "whisper.cpp",
+          "audioFile": "demo.mp3",
+          "audioSize": "6.53",
+          "uploadTime": 30,
+          "queueTime": 1169,
+          "processingTime": 129000,
+          "totalTime": 130199,
+          "textLength": 2757,
+          "wordCount": 0,
+          "engineMetadata": {}
+        },
+        {
+          "success": true,
+          "engine": "whisper.cpp",
+          "audioFile": "test-short.mp3",
+          "audioSize": "0.02",
+          "uploadTime": 37,
+          "queueTime": 2021,
+          "processingTime": 18000,
+          "totalTime": 20058,
+          "textLength": 24,
+          "wordCount": 0,
+          "engineMetadata": {}
+        },
+        {
+          "success": false,
+          "engine": "whisper.cpp",
+          "audioFile": "audio-1753060858725-713672221.mp3",
+          "error": "ENOENT: no such file or directory, open '/home/bigfriend/whisperapi/whisperapi/uploads/audio-1753060858725-713672221.mp3'"
+        },
+        {
+          "success": false,
+          "engine": "whisper.cpp",
+          "audioFile": "audio-1753060858725-713672221.wav",
+          "error": "ENOENT: no such file or directory, open '/home/bigfriend/whisperapi/whisperapi/uploads/audio-1753060858725-713672221.wav'"
+        }
+      ]
+    },
+    "faster-whisper": {
+      "files": [
+        {
+          "success": true,
+          "engine": "faster-whisper",
+          "audioFile": "demo.mp3",
+          "audioSize": "6.53",
+          "uploadTime": 28,
+          "queueTime": 1035,
+          "processingTime": 59000,
+          "totalTime": 60063,
+          "textLength": 2790,
+          "wordCount": 515,
+          "language": "pt",
+          "engineMetadata": {
+            "language_probability": 1,
+            "duration": 169.3199375,
+            "engine": "faster-whisper"
+          }
+        },
+        {
+          "success": false,
+          "engine": "faster-whisper",
+          "audioFile": "test-short.mp3",
+          "error": "Timeout waiting for faster-whisper transcription to complete"
+        },
+        {
+          "success": false,
+          "engine": "faster-whisper",
+          "audioFile": "audio-1753060858725-713672221.mp3",
+          "error": "ENOENT: no such file or directory, open '/home/bigfriend/whisperapi/whisperapi/uploads/audio-1753060858725-713672221.mp3'"
+        },
+        {
+          "success": false,
+          "engine": "faster-whisper",
+          "audioFile": "audio-1753060858725-713672221.wav",
+          "error": "ENOENT: no such file or directory, open '/home/bigfriend/whisperapi/whisperapi/uploads/audio-1753060858725-713672221.wav'"
+        }
+      ]
+    },
+    "insanely-fast-whisper": {
+      "files": [
+        {
+          "success": false,
+          "engine": "insanely-fast-whisper",
+          "audioFile": "demo.mp3",
+          "error": "Timeout waiting for insanely-fast-whisper transcription to complete"
+        },
+        {
+          "success": false,
+          "engine": "insanely-fast-whisper",
+          "audioFile": "test-short.mp3",
+          "error": "Timeout waiting for insanely-fast-whisper transcription to complete"
+        },
+        {
+          "success": false,
+          "engine": "insanely-fast-whisper",
+          "audioFile": "audio-1753060858725-713672221.mp3",
+          "error": "ENOENT: no such file or directory, open '/home/bigfriend/whisperapi/whisperapi/uploads/audio-1753060858725-713672221.mp3'"
+        },
+        {
+          "success": false,
+          "engine": "insanely-fast-whisper",
+          "audioFile": "audio-1753060858725-713672221.wav",
+          "error": "ENOENT: no such file or directory, open '/home/bigfriend/whisperapi/whisperapi/uploads/audio-1753060858725-713672221.wav'"
+        }
+      ]
+    }
+  },
+  "testFiles": [
+    {
+      "path": "/home/bigfriend/whisperapi/whisperapi/examples/demo.mp3",
+      "name": "demo.mp3",
+      "size": 6851350,
+      "sizeMB": "6.53"
+    },
+    {
+      "path": "/home/bigfriend/whisperapi/whisperapi/test-short.mp3",
+      "name": "test-short.mp3",
+      "size": 24468,
+      "sizeMB": "0.02"
+    },
+    {
+      "path": "/home/bigfriend/whisperapi/whisperapi/uploads/audio-1753060858725-713672221.mp3",
+      "name": "audio-1753060858725-713672221.mp3",
+      "size": 6851350,
+      "sizeMB": "6.53"
+    },
+    {
+      "path": "/home/bigfriend/whisperapi/whisperapi/uploads/audio-1753060858725-713672221.wav",
+      "name": "audio-1753060858725-713672221.wav",
+      "size": 5418482,
+      "sizeMB": "5.17"
+    }
+  ]
+}

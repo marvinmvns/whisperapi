@@ -23,18 +23,21 @@ function checkEnvironmentFile() {
   const envPath = path.join(process.cwd(), '.env');
   if (!fs.existsSync(envPath)) {
     log('yellow', 'No .env file found, skipping model auto-download setup');
-    return null;
+    return { modelName: null, whisperEngine: 'whisper.cpp' };
   }
 
   const envContent = fs.readFileSync(envPath, 'utf8');
   const autoDownloadMatch = envContent.match(/^AUTO_DOWNLOAD_MODEL=(.+)$/m);
+  const whisperEngineMatch = envContent.match(/^WHISPER_ENGINE=(.+)$/m);
   
-  if (!autoDownloadMatch || !autoDownloadMatch[1]) {
+  const modelName = autoDownloadMatch && autoDownloadMatch[1] ? autoDownloadMatch[1].trim() : null;
+  const whisperEngine = whisperEngineMatch && whisperEngineMatch[1] ? whisperEngineMatch[1].trim() : 'whisper.cpp';
+
+  if (!modelName) {
     log('yellow', 'AUTO_DOWNLOAD_MODEL not set in .env, skipping model auto-download');
-    return null;
   }
 
-  return autoDownloadMatch[1].trim();
+  return { modelName, whisperEngine };
 }
 
 function checkWhisperCppSetup() {
@@ -162,6 +165,39 @@ function downloadModel(modelName) {
   }
 }
 
+function checkPythonAndFasterWhisper() {
+  log('blue', 'Checking Python and faster-whisper setup...');
+
+  try {
+    // Check if Python 3 is available
+    execSync('python3 --version', { stdio: 'pipe' });
+    log('green', 'Python 3 is available');
+  } catch (error) {
+    log('red', 'Python 3 not found. Please install Python 3.9 or higher for faster-whisper support.');
+    return false;
+  }
+
+  try {
+    // Check if faster-whisper is installed
+    execSync('python3 -c "import faster_whisper; print(faster_whisper.__version__)"', { stdio: 'pipe' });
+    log('green', 'faster-whisper is already installed');
+    return true;
+  } catch (error) {
+    log('yellow', 'faster-whisper not found. Installing...');
+    
+    try {
+      log('blue', 'Installing faster-whisper via pip...');
+      execSync('python3 -m pip install faster-whisper', { stdio: 'inherit' });
+      log('green', 'faster-whisper installed successfully!');
+      return true;
+    } catch (installError) {
+      log('red', `Failed to install faster-whisper: ${installError.message}`);
+      log('yellow', 'You can manually install it with: pip install faster-whisper');
+      return false;
+    }
+  }
+}
+
 function main() {
   log('cyan', 'WhisperAPI Post-Install Setup');
   log('cyan', '============================');
@@ -177,24 +213,39 @@ function main() {
 
   try {
     // Check environment configuration
-    const modelName = checkEnvironmentFile();
-    if (!modelName) {
-      log('yellow', 'Skipping model setup - no AUTO_DOWNLOAD_MODEL configured');
-      return;
+    const { modelName, whisperEngine } = checkEnvironmentFile();
+    
+    log('blue', `Configured whisper engine: ${whisperEngine}`);
+    if (modelName) {
+      log('blue', `Configured model: ${modelName}`);
     }
 
-    log('blue', `Configured model: ${modelName}`);
+    // Setup based on the selected engine
+    if (whisperEngine === 'faster-whisper') {
+      log('blue', 'Setting up faster-whisper engine...');
+      
+      if (!checkPythonAndFasterWhisper()) {
+        log('red', 'Failed to setup faster-whisper. You can still use whisper.cpp by setting WHISPER_ENGINE=whisper.cpp in .env');
+        process.exit(1);
+      }
+      
+      log('green', 'faster-whisper setup completed successfully!');
+    } else {
+      log('blue', 'Setting up whisper.cpp engine...');
+      
+      // Check and setup Whisper.cpp
+      if (!checkWhisperCppSetup()) {
+        log('red', 'Failed to setup Whisper.cpp');
+        process.exit(1);
+      }
 
-    // Check and setup Whisper.cpp
-    if (!checkWhisperCppSetup()) {
-      log('red', 'Failed to setup Whisper.cpp');
-      process.exit(1);
-    }
-
-    // Download model if needed
-    if (!downloadModel(modelName)) {
-      log('red', 'Failed to download model');
-      process.exit(1);
+      // Download model if needed (only for whisper.cpp)
+      if (modelName && !downloadModel(modelName)) {
+        log('red', 'Failed to download model');
+        process.exit(1);
+      }
+      
+      log('green', 'whisper.cpp setup completed successfully!');
     }
 
     log('green', 'WhisperAPI setup completed successfully!');
@@ -214,4 +265,4 @@ if (require.main === module) {
   main();
 }
 
-module.exports = { main, checkEnvironmentFile, checkWhisperCppSetup, downloadModel };
+module.exports = { main, checkEnvironmentFile, checkWhisperCppSetup, downloadModel, checkPythonAndFasterWhisper };

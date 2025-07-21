@@ -1,7 +1,7 @@
 {
   "name": "whisperapi",
   "version": "1.0.0",
-  "description": "Node.js API for audio transcription using Whisper C++",
+  "description": "Node.js API for audio transcription using Whisper.cpp or faster-whisper",
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
@@ -14,7 +14,9 @@
     "check:models": "node scripts/check-models.js",
     "models": "node scripts/check-models.js",
     "validate-system": "node scripts/validate-system.js",
-    "validate": "node scripts/validate-system.js"
+    "validate": "node scripts/validate-system.js",
+    "validate:engines": "node scripts/validate-engines.js",
+    "engines": "node scripts/validate-engines.js"
   },
   "keywords": [
     "whisper",

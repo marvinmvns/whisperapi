@@ -1,0 +1,113 @@
+{
+  "timestamp": "2025-07-21T00:53:05.332Z",
+  "summary": [
+    {
+      "engine": "whisper.cpp",
+      "runs": 2,
+      "avgProcessingTime": "58.0",
+      "avgTotalTime": "60.1",
+      "avgTextLength": 1391,
+      "fastest": "19.0",
+      "slowest": "97.0"
+    },
+    {
+      "engine": "faster-whisper",
+      "runs": 1,
+      "avgProcessingTime": "48.0",
+      "avgTotalTime": "50.1",
+      "avgTextLength": 2790,
+      "fastest": "48.0",
+      "slowest": "48.0"
+    }
+  ],
+  "detailed": {
+    "whisper.cpp": {
+      "files": [
+        {
+          "success": true,
+          "engine": "whisper.cpp",
+          "audioFile": "demo.mp3",
+          "audioSize": "6.53",
+          "uploadTime": 30,
+          "queueTime": 3114,
+          "processingTime": 97000,
+          "totalTime": 100144,
+          "textLength": 2757,
+          "wordCount": 0,
+          "engineMetadata": {}
+        },
+        {
+          "success": true,
+          "engine": "whisper.cpp",
+          "audioFile": "test-short.mp3",
+          "audioSize": "0.02",
+          "uploadTime": 34,
+          "queueTime": 1030,
+          "processingTime": 19000,
+          "totalTime": 20064,
+          "textLength": 24,
+          "wordCount": 0,
+          "engineMetadata": {}
+        }
+      ]
+    },
+    "faster-whisper": {
+      "files": [
+        {
+          "success": true,
+          "engine": "faster-whisper",
+          "audioFile": "demo.mp3",
+          "audioSize": "6.53",
+          "uploadTime": 35,
+          "queueTime": 2033,
+          "processingTime": 48000,
+          "totalTime": 50068,
+          "textLength": 2790,
+          "wordCount": 515,
+          "language": "pt",
+          "engineMetadata": {
+            "language_probability": 1,
+            "duration": 169.3199375,
+            "engine": "faster-whisper"
+          }
+        },
+        {
+          "success": false,
+          "engine": "faster-whisper",
+          "audioFile": "test-short.mp3",
+          "error": "Timeout waiting for faster-whisper transcription to complete"
+        }
+      ]
+    },
+    "insanely-fast-whisper": {
+      "files": [
+        {
+          "success": false,
+          "engine": "insanely-fast-whisper",
+          "audioFile": "demo.mp3",
+          "error": "Timeout waiting for insanely-fast-whisper transcription to complete"
+        },
+        {
+          "success": false,
+          "engine": "insanely-fast-whisper",
+          "audioFile": "test-short.mp3",
+          "error": "Timeout waiting for insanely-fast-whisper transcription to complete"
+        }
+      ]
+    }
+  },
+  "testFiles": [
+    {
+      "path": "/home/bigfriend/whisperapi/whisperapi/examples/demo.mp3",
+      "name": "demo.mp3",
+      "size": 6851350,
+      "sizeMB": "6.53"
+    },
+    {
+      "path": "/home/bigfriend/whisperapi/whisperapi/test-short.mp3",
+      "name": "test-short.mp3",
+      "size": 24468,
+      "sizeMB": "0.02"
+    }
+  ]
+}

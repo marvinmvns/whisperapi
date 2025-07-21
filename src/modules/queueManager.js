@@ -51,7 +51,20 @@ class QueueManager {
   }
 
   createWorker() {
-    const worker = new Worker(path.join(__dirname, '../workers/transcriptionWorker.js'));
+    // Determine which worker to use based on WHISPER_ENGINE environment variable
+    const whisperEngine = process.env.WHISPER_ENGINE || 'whisper.cpp';
+    let workerScript;
+    
+    if (whisperEngine === 'faster-whisper') {
+      workerScript = '../workers/fasterWhisperWorker.js';
+    } else if (whisperEngine === 'insanely-fast-whisper') {
+      workerScript = '../workers/insanelyFastWhisperWorker.js';
+    } else {
+      // Default to whisper.cpp
+      workerScript = '../workers/transcriptionWorker.js';
+    }
+    
+    const worker = new Worker(path.join(__dirname, workerScript));
     
     worker.on('message', (message) => {
       const { type, jobId, result, error, processingTime } = message;
@@ -92,6 +105,8 @@ class QueueManager {
       completedAt: null,
       retries: 0,
       maxRetries: options.maxRetries || 3,
+      timeout: options.timeout || 600000, // 10 minutes default timeout
+      timeoutId: null,
       options
     };
 
@@ -121,6 +136,11 @@ class QueueManager {
     availableWorker.busy = true;
     this.activeJobs++;
 
+    // Set up timeout for job
+    job.timeoutId = setTimeout(() => {
+      this.handleJobTimeout(jobId);
+    }, job.timeout);
+
     availableWorker.worker.postMessage({
       type: 'transcribe',
       jobId,
@@ -132,6 +152,12 @@ class QueueManager {
   handleJobComplete(jobId, result, processingTime) {
     const job = this.jobs.get(jobId);
     if (!job) return;
+
+    // Clear timeout
+    if (job.timeoutId) {
+      clearTimeout(job.timeoutId);
+      job.timeoutId = null;
+    }
 
     job.status = 'completed';
     job.result = result;
@@ -155,6 +181,12 @@ class QueueManager {
     const job = this.jobs.get(jobId);
     if (!job) return;
 
+    // Clear timeout
+    if (job.timeoutId) {
+      clearTimeout(job.timeoutId);
+      job.timeoutId = null;
+    }
+
     job.retries++;
     
     if (job.retries < job.maxRetries) {
@@ -167,6 +199,19 @@ class QueueManager {
     }
 
     this.releaseWorker();
+  }
+
+  handleJobTimeout(jobId) {
+    const job = this.jobs.get(jobId);
+    if (!job) return;
+
+    console.warn(`Job ${jobId} timed out after ${job.timeout}ms`);
+    
+    // Clear the timeout reference
+    job.timeoutId = null;
+    
+    // Treat timeout as error
+    this.handleJobError(jobId, `Job timed out after ${Math.ceil(job.timeout / 1000)} seconds`);
   }
 
   releaseWorker() {
