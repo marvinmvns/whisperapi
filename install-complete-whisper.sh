@@ -124,6 +124,7 @@ install_system_dependencies() {
                 python3-dev \
                 ffmpeg \
                 build-essential \
+                cmake \
                 curl \
                 wget \
                 git \
@@ -148,6 +149,7 @@ install_system_dependencies() {
                 gcc \
                 gcc-c++ \
                 make \
+                cmake \
                 curl \
                 wget \
                 git \
@@ -164,6 +166,7 @@ install_system_dependencies() {
                 python-pip \
                 ffmpeg \
                 base-devel \
+                cmake \
                 curl \
                 wget \
                 git \
@@ -178,6 +181,7 @@ install_system_dependencies() {
                 ffmpeg \
                 portaudio \
                 libsndfile \
+                cmake \
                 git
             ;;
         *)
@@ -186,6 +190,7 @@ install_system_dependencies() {
             echo "  - pip"
             echo "  - ffmpeg"
             echo "  - build tools (gcc, make)"
+            echo "  - cmake"
             echo "  - portaudio development libraries"
             echo "  - libsndfile development libraries"
             ;;
