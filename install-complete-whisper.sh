@@ -573,12 +573,12 @@ install_pytorch() {
     fi
     
     # Test PyTorch installation
-    python3 -c "import torch; print(f'PyTorch {torch.__version__} installed successfully')"
+    scripts/venv/bin/python3 -c "import torch; print(f'PyTorch {torch.__version__} installed successfully')"
     
     if [[ "$CUDA_AVAILABLE" == "true" ]]; then
-        CUDA_AVAILABLE_TORCH=$(python3 -c "import torch; print(torch.cuda.is_available())" 2>/dev/null || echo "False")
+        CUDA_AVAILABLE_TORCH=$(scripts/venv/bin/python3 -c "import torch; print(torch.cuda.is_available())" 2>/dev/null || echo "False")
         if [[ "$CUDA_AVAILABLE_TORCH" == "True" ]]; then
-            CUDA_DEVICE_COUNT=$(python3 -c "import torch; print(torch.cuda.device_count())" 2>/dev/null || echo "0")
+            CUDA_DEVICE_COUNT=$(scripts/venv/bin/python3 -c "import torch; print(torch.cuda.device_count())" 2>/dev/null || echo "0")
             print_success "CUDA support enabled in PyTorch ($CUDA_DEVICE_COUNT device(s) available)"
         else
             print_warning "CUDA support not available in PyTorch (will use CPU)"
