@@ -58,7 +58,21 @@ check_project_directory() {
 detect_system() {
     print_status "Detecting system..."
     
-    if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+    # Check for WSL (Windows Subsystem for Linux)
+    if grep -qi microsoft /proc/version 2>/dev/null || grep -qi wsl /proc/version 2>/dev/null; then
+        OS="wsl"
+        print_status "Windows Subsystem for Linux (WSL) detected"
+        # Treat WSL as Linux for package management
+        if command -v apt-get &> /dev/null; then
+            PKG_MANAGER="apt"
+        elif command -v yum &> /dev/null; then
+            PKG_MANAGER="yum"
+        elif command -v dnf &> /dev/null; then
+            PKG_MANAGER="dnf"
+        else
+            PKG_MANAGER="unknown"
+        fi
+    elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
         OS="linux"
         if command -v apt-get &> /dev/null; then
             PKG_MANAGER="apt"
@@ -68,6 +82,8 @@ detect_system() {
             PKG_MANAGER="dnf"
         elif command -v pacman &> /dev/null; then
             PKG_MANAGER="pacman"
+        elif command -v zypper &> /dev/null; then
+            PKG_MANAGER="zypper"
         else
             print_warning "Unknown Linux package manager, some dependencies may need manual installation"
             PKG_MANAGER="unknown"
@@ -75,9 +91,19 @@ detect_system() {
     elif [[ "$OSTYPE" == "darwin"* ]]; then
         OS="macos"
         PKG_MANAGER="brew"
-    else
+    elif [[ "$OSTYPE" == "msys" ]] || [[ "$OSTYPE" == "cygwin" ]] || [[ "$OSTYPE" == "win32" ]]; then
         OS="windows"
-        PKG_MANAGER="choco"
+        if command -v choco &> /dev/null; then
+            PKG_MANAGER="choco"
+        elif command -v winget &> /dev/null; then
+            PKG_MANAGER="winget"
+        else
+            PKG_MANAGER="manual"
+        fi
+    else
+        OS="unknown"
+        PKG_MANAGER="manual"
+        print_warning "Unknown operating system: $OSTYPE"
     fi
     
     print_success "Detected: $OS with $PKG_MANAGER"
@@ -101,6 +127,9 @@ install_system_dependencies() {
                 curl \
                 wget \
                 git \
+                ca-certificates \
+                gnupg \
+                lsb-release \
                 libasound2-dev \
                 libportaudio2 \
                 libportaudiocpp0 \
@@ -165,25 +194,265 @@ install_system_dependencies() {
     print_success "System dependencies installation completed"
 }
 
-# Check Node.js version
-check_nodejs() {
-    print_section "Checking Node.js"
+# Get latest Node.js LTS version
+get_latest_nodejs_lts() {
+    print_status "Fetching latest Node.js LTS version..."
     
-    if ! command -v node &> /dev/null; then
-        print_error "Node.js is not installed. Please install Node.js 16.0.0 or higher."
-        print_status "Visit: https://nodejs.org/"
+    NODEJS_LTS_VERSION=""
+    
+    # Try multiple sources for LTS version info
+    if command -v curl &> /dev/null; then
+        # Method 1: Official Node.js release schedule API (with jq if available)
+        if command -v jq &> /dev/null; then
+            NODEJS_LTS_VERSION=$(curl -s https://nodejs.org/download/release/index.json | jq -r '.[] | select(.lts != false) | .version' | head -1 2>/dev/null)
+        fi
+        
+        # Method 2: Fallback to parsing without jq
+        if [[ -z "$NODEJS_LTS_VERSION" ]]; then
+            NODEJS_LTS_VERSION=$(curl -s https://nodejs.org/download/release/index.json | grep -o '"version":"v[0-9]\+\.[0-9]\+\.[0-9]\+"' | grep -v '"lts":false' | head -1 | grep -o 'v[0-9]\+\.[0-9]\+\.[0-9]\+' 2>/dev/null)
+        fi
+        
+        # Method 3: Try the dist endpoint
+        if [[ -z "$NODEJS_LTS_VERSION" ]]; then
+            NODEJS_LTS_VERSION=$(curl -s https://nodejs.org/dist/index.json | grep -A5 '"lts":"' | grep '"version"' | head -1 | grep -o 'v[0-9]\+\.[0-9]\+\.[0-9]\+' 2>/dev/null)
+        fi
+        
+        # Method 4: Get latest from GitHub API (as last resort)
+        if [[ -z "$NODEJS_LTS_VERSION" ]]; then
+            NODEJS_LTS_VERSION=$(curl -s https://api.github.com/repos/nodejs/node/releases | grep -o '"tag_name":"v[0-9]\+\.[0-9]\+\.[0-9]\+"' | grep -o 'v[0-9]\+\.[0-9]\+\.[0-9]\+' | head -1 2>/dev/null)
+        fi
+    fi
+    
+    # Fallback to known stable LTS versions if API fails
+    if [[ -z "$NODEJS_LTS_VERSION" ]]; then
+        print_warning "Could not fetch latest LTS version from APIs, using Node.js 20.x LTS"
+        NODEJS_LTS_VERSION="v20"
+    fi
+    
+    # Clean up the version string
+    NODEJS_LTS_VERSION=$(echo $NODEJS_LTS_VERSION | sed 's/^v//' | sed 's/^/v/')
+    
+    print_status "Target Node.js LTS version: $NODEJS_LTS_VERSION"
+    export NODEJS_LTS_VERSION
+}
+
+# Install Node.js using NodeSource repository (Linux)
+install_nodejs_linux() {
+    print_status "Installing Node.js $NODEJS_LTS_VERSION on Linux..."
+    
+    # Extract major version (remove 'v' prefix)
+    LTS_MAJOR=$(echo $NODEJS_LTS_VERSION | sed 's/v//' | cut -d. -f1)
+    
+    case $PKG_MANAGER in
+        "apt")
+            # Use NodeSource repository for latest LTS
+            print_status "Setting up NodeSource repository..."
+            curl -fsSL https://deb.nodesource.com/setup_${LTS_MAJOR}.x | sudo -E bash -
+            sudo apt-get install -y nodejs
+            ;;
+        "yum"|"dnf")
+            # Use NodeSource repository for RHEL/CentOS/Fedora
+            print_status "Setting up NodeSource repository..."
+            curl -fsSL https://rpm.nodesource.com/setup_${LTS_MAJOR}.x | sudo bash -
+            sudo $PKG_MANAGER install -y nodejs npm
+            ;;
+        "pacman")
+            # Use official Arch repository (usually up-to-date)
+            print_status "Installing Node.js via pacman..."
+            sudo pacman -S --noconfirm nodejs npm
+            ;;
+        *)
+            print_warning "Unknown package manager. Please install Node.js manually:"
+            echo "  Visit: https://nodejs.org/"
+            echo "  Or use Node Version Manager (nvm): https://github.com/nvm-sh/nvm"
+            return 1
+            ;;
+    esac
+}
+
+# Install Node.js on macOS
+install_nodejs_macos() {
+    print_status "Installing Node.js $NODEJS_LTS_VERSION on macOS..."
+    
+    if ! command -v brew &> /dev/null; then
+        print_error "Homebrew not found. Installing Homebrew first..."
+        /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+    fi
+    
+    # Install latest LTS Node.js
+    brew install node
+    
+    # Alternative: install specific LTS version if needed
+    # LTS_MAJOR=$(echo $NODEJS_LTS_VERSION | sed 's/v//' | cut -d. -f1)
+    # brew install node@${LTS_MAJOR}
+}
+
+# Install Node.js on Windows
+install_nodejs_windows() {
+    print_status "Installing Node.js $NODEJS_LTS_VERSION on Windows..."
+    
+    case $PKG_MANAGER in
+        "choco")
+            print_status "Installing Node.js via Chocolatey..."
+            choco install nodejs --version="$NODEJS_LTS_VERSION" -y
+            ;;
+        "winget")
+            print_status "Installing Node.js via winget..."
+            winget install -e --id OpenJS.NodeJS
+            ;;
+        *)
+            print_warning "No Windows package manager found."
+            print_status "Please install Node.js manually:"
+            echo "  1. Visit: https://nodejs.org/"
+            echo "  2. Download the latest LTS version"
+            echo "  3. Run the installer as Administrator"
+            echo "  4. Restart your terminal/command prompt"
+            echo ""
+            echo "Or install a package manager:"
+            echo "  - Chocolatey: https://chocolatey.org/install"
+            echo "  - winget: Usually comes with Windows 10/11"
+            return 1
+            ;;
+    esac
+}
+
+# Install Node.js using NVM (Node Version Manager) - Universal fallback
+install_nodejs_nvm() {
+    print_status "Installing Node.js via NVM (Node Version Manager)..."
+    
+    # Install NVM if not present
+    if ! command -v nvm &> /dev/null && [[ ! -f "$HOME/.nvm/nvm.sh" ]]; then
+        print_status "Installing NVM..."
+        curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash
+        
+        # Source NVM
+        export NVM_DIR="$HOME/.nvm"
+        [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+        [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"
+    fi
+    
+    # Load NVM if it exists
+    if [[ -f "$HOME/.nvm/nvm.sh" ]]; then
+        source "$HOME/.nvm/nvm.sh"
+    fi
+    
+    if command -v nvm &> /dev/null; then
+        print_status "Installing and using Node.js LTS..."
+        nvm install --lts
+        nvm use --lts
+        nvm alias default lts/*
+    else
+        print_error "Could not install or load NVM"
+        return 1
+    fi
+}
+
+# Check and install Node.js
+check_and_install_nodejs() {
+    print_section "Checking and Installing Node.js"
+    
+    get_latest_nodejs_lts
+    
+    NODEJS_INSTALLED=false
+    NODEJS_VERSION_OK=false
+    
+    # Check if Node.js is already installed
+    if command -v node &> /dev/null; then
+        NODEJS_INSTALLED=true
+        CURRENT_NODE_VERSION=$(node -v | sed 's/v//')
+        CURRENT_MAJOR_VERSION=$(echo $CURRENT_NODE_VERSION | cut -d. -f1)
+        
+        print_status "Found Node.js $CURRENT_NODE_VERSION"
+        
+        # Check if version is acceptable (>= 16)
+        if [[ $CURRENT_MAJOR_VERSION -ge 16 ]]; then
+            NODEJS_VERSION_OK=true
+            print_success "Node.js $CURRENT_NODE_VERSION is compatible (>= 16.0.0)"
+            
+            # Check if it's the latest LTS (optional upgrade)
+            TARGET_MAJOR=$(echo $NODEJS_LTS_VERSION | sed 's/v//' | cut -d. -f1)
+            if [[ $CURRENT_MAJOR_VERSION -lt $TARGET_MAJOR ]]; then
+                echo ""
+                read -p "A newer LTS version ($NODEJS_LTS_VERSION) is available. Upgrade? (y/N): " -n 1 -r
+                echo
+                if [[ $REPLY =~ ^[Yy]$ ]]; then
+                    NODEJS_VERSION_OK=false  # Force upgrade
+                fi
+            fi
+        else
+            print_warning "Node.js $CURRENT_NODE_VERSION is too old (minimum: 16.0.0)"
+        fi
+    else
+        print_warning "Node.js is not installed"
+    fi
+    
+    # Install or upgrade Node.js if needed
+    if [[ "$NODEJS_INSTALLED" == false ]] || [[ "$NODEJS_VERSION_OK" == false ]]; then
+        print_status "Installing Node.js..."
+        
+        case $OS in
+            "linux"|"wsl")
+                if ! install_nodejs_linux; then
+                    print_warning "System package manager failed, trying NVM..."
+                    install_nodejs_nvm
+                fi
+                ;;
+            "macos")
+                if ! install_nodejs_macos; then
+                    print_warning "Homebrew installation failed, trying NVM..."
+                    install_nodejs_nvm
+                fi
+                ;;
+            "windows")
+                if ! install_nodejs_windows; then
+                    print_warning "Windows package manager failed, trying NVM for Windows..."
+                    install_nodejs_nvm
+                fi
+                ;;
+            *)
+                print_status "Using NVM for Node.js installation..."
+                install_nodejs_nvm
+                ;;
+        esac
+        
+        # Verify installation
+        if command -v node &> /dev/null; then
+            NEW_NODE_VERSION=$(node -v)
+            print_success "Node.js $NEW_NODE_VERSION installed successfully"
+            
+            # Verify npm is also available
+            if command -v npm &> /dev/null; then
+                NPM_VERSION=$(npm -v)
+                print_success "npm $NPM_VERSION is available"
+            else
+                print_warning "npm not found, installing..."
+                if [[ "$OS" == "linux" ]]; then
+                    case $PKG_MANAGER in
+                        "apt") sudo apt-get install -y npm ;;
+                        "yum"|"dnf") sudo $PKG_MANAGER install -y npm ;;
+                        "pacman") sudo pacman -S --noconfirm npm ;;
+                    esac
+                fi
+            fi
+        else
+            print_error "Node.js installation failed"
+            print_error "Please install Node.js manually:"
+            echo "  - Visit: https://nodejs.org/"
+            echo "  - Or use Node Version Manager: https://github.com/nvm-sh/nvm"
+            exit 1
+        fi
+    fi
+    
+    # Final version check
+    FINAL_NODE_VERSION=$(node -v | sed 's/v//')
+    FINAL_MAJOR_VERSION=$(echo $FINAL_NODE_VERSION | cut -d. -f1)
+    
+    if [[ $FINAL_MAJOR_VERSION -lt 16 ]]; then
+        print_error "Node.js $FINAL_NODE_VERSION is still too old after installation attempt"
         exit 1
     fi
     
-    NODE_VERSION=$(node -v | sed 's/v//')
-    MAJOR_VERSION=$(echo $NODE_VERSION | cut -d. -f1)
-    
-    if [[ $MAJOR_VERSION -lt 16 ]]; then
-        print_error "Node.js $NODE_VERSION detected, but 16.0.0 or higher is required"
-        exit 1
-    fi
-    
-    print_success "Node.js $NODE_VERSION detected"
+    print_success "Node.js setup completed: $FINAL_NODE_VERSION"
 }
 
 # Install Node.js dependencies
@@ -551,11 +820,13 @@ print_summary() {
     echo -e "${GREEN}🎉 Complete WhisperAPI Installation Finished!${NC}"
     echo ""
     echo "Installed components:"
-    echo "✅ System dependencies (ffmpeg, audio libraries)"
-    echo "✅ Node.js dependencies"
-    echo "✅ Python virtual environment"
+    echo "✅ System dependencies (ffmpeg, build tools, audio libraries)"
+    echo "✅ Node.js (latest LTS version)"
+    echo "✅ Node.js project dependencies"
+    echo "✅ Python virtual environment with optimized packages"
     echo "✅ faster-whisper engine"
     echo "✅ insanely-fast-whisper engine"
+    echo "✅ PyTorch with GPU support (if available)"
     echo "✅ Environment configuration"
     echo ""
     echo "Next steps:"
@@ -599,7 +870,7 @@ main() {
     check_project_directory
     detect_system
     install_system_dependencies
-    check_nodejs
+    check_and_install_nodejs
     install_nodejs_dependencies
     check_python
     setup_python_venv
@@ -627,12 +898,14 @@ case "${1:-}" in
         echo "  --cpu-only     Force CPU-only installation"
         echo ""
         echo "This script installs:"
-        echo "- System dependencies (ffmpeg, build tools)"
-        echo "- Node.js dependencies"
-        echo "- Python virtual environment"
+        echo "- System dependencies (ffmpeg, build tools, curl, etc.)"
+        echo "- Node.js (latest LTS version automatically detected)"
+        echo "- Node.js project dependencies (npm install)"
+        echo "- Python virtual environment with optimized packages"
         echo "- faster-whisper engine" 
         echo "- insanely-fast-whisper engine"
-        echo "- Essential models (optional)"
+        echo "- PyTorch with CUDA support (if GPU detected)"
+        echo "- Essential Whisper models (optional)"
         exit 0
         ;;
     "--cpu-only")
