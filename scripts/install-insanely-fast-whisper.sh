@@ -82,14 +82,14 @@ check_cuda() {
             echo "$GPU_INFO" | while read line; do
                 echo "   - $line MB"
             done
-            export CUDA_AVAILABLE=true
+            CUDA_AVAILABLE=true
         else
             print_warning "nvidia-smi found but no GPU information available"
-            export CUDA_AVAILABLE=false
+            CUDA_AVAILABLE=false
         fi
     else
         print_warning "NVIDIA GPU not detected. Will install CPU-only version."
-        export CUDA_AVAILABLE=false
+        CUDA_AVAILABLE=false
     fi
 }
 
@@ -99,14 +99,23 @@ install_pytorch() {
     
     if [[ "$CUDA_AVAILABLE" == "true" ]]; then
         print_status "Installing PyTorch with CUDA support..."
-        pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+        if ! pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121; then
+            print_error "Failed to install PyTorch with CUDA support"
+            return 1
+        fi
     else
         print_status "Installing PyTorch CPU-only version..."
-        pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+        if ! pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu; then
+            print_error "Failed to install PyTorch CPU version"
+            return 1
+        fi
     fi
     
     # Test PyTorch installation
-    python3 -c "import torch; print(f'PyTorch {torch.__version__} installed successfully')"
+    if ! python3 -c "import torch; print(f'PyTorch {torch.__version__} installed successfully')"; then
+        print_error "PyTorch installation test failed"
+        return 1
+    fi
     
     if [[ "$CUDA_AVAILABLE" == "true" ]]; then
         CUDA_AVAILABLE_TORCH=$(python3 -c "import torch; print(torch.cuda.is_available())" 2>/dev/null || echo "False")
@@ -124,14 +133,20 @@ install_transformers() {
     print_status "Installing Transformers and related packages..."
     
     # Core transformers dependencies
-    pip install transformers>=4.21.0
-    pip install accelerate
-    pip install datasets
-    pip install optimum
+    for package in "transformers>=4.21.0" "accelerate" "datasets" "optimum"; do
+        if ! pip install "$package"; then
+            print_error "Failed to install $package"
+            return 1
+        fi
+    done
     
     # Audio processing dependencies
-    pip install librosa
-    pip install soundfile
+    for package in "librosa" "soundfile" "audioread"; do
+        if ! pip install "$package"; then
+            print_error "Failed to install $package"
+            return 1
+        fi
+    done
     
     # Additional optimization packages
     if [[ "$CUDA_AVAILABLE" == "true" ]]; then
@@ -146,19 +161,13 @@ install_transformers() {
 install_additional_deps() {
     print_status "Installing additional dependencies..."
     
-    # Scientific computing
-    pip install numpy
-    pip install scipy
-    
-    # Audio processing
-    pip install librosa
-    pip install soundfile
-    pip install audioread
-    
-    # Utilities
-    pip install tqdm
-    pip install requests
-    pip install Pillow
+    # Install all packages with error handling
+    for package in "numpy" "scipy" "tqdm" "requests" "Pillow"; do
+        if ! pip install "$package"; then
+            print_error "Failed to install $package"
+            return 1
+        fi
+    done
     
     print_success "Additional dependencies installed"
 }
@@ -168,14 +177,14 @@ test_installation() {
     print_status "Testing insanely-fast-whisper installation..."
     
     # Test import
-    python3 -c "
+    if ! python3 -c "
 import torch
 import transformers
 import librosa
 import numpy as np
 from transformers import pipeline, AutoModelForSpeechSeq2Seq, AutoProcessor
 
-print('✅ All imports successful')
+print('[OK] All imports successful')
 print(f'PyTorch version: {torch.__version__}')
 print(f'Transformers version: {transformers.__version__}')
 print(f'CUDA available: {torch.cuda.is_available()}')
@@ -183,11 +192,14 @@ if torch.cuda.is_available():
     print(f'CUDA devices: {torch.cuda.device_count()}')
     for i in range(torch.cuda.device_count()):
         print(f'  Device {i}: {torch.cuda.get_device_name(i)}')
-"
+"; then
+        print_error "Import test failed"
+        return 1
+    fi
 
     # Test model loading (small model for quick test)
     print_status "Testing model loading with tiny model..."
-    python3 -c "
+    if ! python3 -c "
 from transformers import pipeline
 import torch
 
@@ -201,11 +213,14 @@ try:
         torch_dtype=torch_dtype,
         device=device,
     )
-    print('✅ Model loading test successful')
+    print('[OK] Model loading test successful')
 except Exception as e:
-    print(f'❌ Model loading test failed: {e}')
+    print(f'[ERROR] Model loading test failed: {e}')
     raise
-"
+"; then
+        print_error "Model loading test failed"
+        return 1
+    fi
     
     print_success "Installation test completed successfully!"
 }
@@ -233,9 +248,9 @@ from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor
 try:
     model = AutoModelForSpeechSeq2Seq.from_pretrained('$model')
     processor = AutoProcessor.from_pretrained('$model')
-    print('✅ $model downloaded successfully')
+    print('[OK] $model downloaded successfully')
 except Exception as e:
-    print('❌ Failed to download $model: ' + str(e))
+    print('[ERROR] Failed to download $model: ' + str(e))
 "
     done
     
@@ -303,22 +318,48 @@ main() {
     check_cuda
     
     print_status "Upgrading pip..."
-    pip install --upgrade pip
+    if ! pip install --upgrade pip; then
+        print_error "Failed to upgrade pip"
+        exit 1
+    fi
     
-    install_pytorch
-    install_transformers
-    install_additional_deps
+    if ! install_pytorch; then
+        print_error "PyTorch installation failed"
+        exit 1
+    fi
     
-    test_installation
+    if ! install_transformers; then
+        print_error "Transformers installation failed"
+        exit 1
+    fi
     
-    # Ask user if they want to download models
-    echo ""
-    read -p "Do you want to pre-download recommended models? This will take some time but improve first-run performance. (y/N): " -n 1 -r
-    echo
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
+    if ! install_additional_deps; then
+        print_error "Additional dependencies installation failed"
+        exit 1
+    fi
+    
+    if ! test_installation; then
+        print_error "Installation test failed"
+        exit 1
+    fi
+    
+    # Download models based on environment variable or interactive prompt
+    if [[ "${AUTO_DOWNLOAD_MODELS:-}" == "true" ]]; then
+        print_status "AUTO_DOWNLOAD_MODELS=true detected, downloading recommended models..."
         download_models
+    elif [[ -t 0 ]]; then
+        # Interactive mode - ask user
+        echo ""
+        read -p "Do you want to pre-download recommended models? This will take some time but improve first-run performance. (y/N): " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            download_models
+        else
+            print_status "Skipping model pre-download. Models will be downloaded on first use."
+        fi
     else
-        print_status "Skipping model pre-download. Models will be downloaded on first use."
+        # Non-interactive mode - skip by default
+        print_status "Non-interactive mode detected. Skipping model pre-download. Set AUTO_DOWNLOAD_MODELS=true to download automatically."
     fi
     
     update_env_config
